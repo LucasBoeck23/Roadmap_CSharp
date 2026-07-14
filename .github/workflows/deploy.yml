@@ -31,7 +31,7 @@ jobs:
         run: dotnet publish web/RoadmapApp/RoadmapApp.csproj -c Release -o output
 
       - name: Fix base path for GitHub Pages
-        run: sed -i 's|<base href="/" />|<base href="/Roadmap_CSharp/" />|g' output/wwwroot/index.html
+        run: sed -i 's|<base href="/" />|<base href="/roadmap/" />|g' output/wwwroot/index.html
 
       - name: Add .nojekyll
         run: touch output/wwwroot/.nojekyll
