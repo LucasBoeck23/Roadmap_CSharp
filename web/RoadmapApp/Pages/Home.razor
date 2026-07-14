@@ -1,0 +1,233 @@
+﻿@page "/"
+@using RoadmapApp.Models
+@using RoadmapApp.Services
+@inject TopicService TopicService
+
+<div class="ide-layout">
+    <!-- ACTIVITY BAR (ícones laterais tipo VS Code) -->
+    <div class="activity-bar">
+        @if (_tracks is not null)
+        {
+            @foreach (var track in _tracks)
+            {
+                <div class="activity-icon @(track.Id == _activeTrackId ? "activity-active" : "")"
+                     title="@track.Nome"
+                     @onclick="() => SwitchTrack(track)">
+                    <img src="@track.Icone" alt="@track.Nome" />
+                </div>
+            }
+        }
+    </div>
+
+    <!-- SIDEBAR (file explorer) -->
+    <div class="sidebar">
+        <div class="sidebar-header">EXPLORER</div>
+        <div class="tree-view">
+            @if (_activeTopics is not null)
+            {
+                <div class="tree-section">
+                    <div class="tree-section-title">📂 @(_selectedTrack?.Nome ?? "")</div>
+                    @foreach (var topic in _activeTopics)
+                    {
+                        <div class="tree-item @(IsTopicOpen(topic) ? "tree-selected" : "")"
+                             @onclick="() => OpenTopic(topic)">
+                            <span class="tree-icon">@GetFileIcon(topic)</span>
+                            <span class="tree-label">@topic.Nome</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- MAIN EDITOR AREA -->
+    <div class="editor-main">
+        <!-- EDITOR TABS (sub-abas dos documentos abertos) -->
+        @if (_openTabs.Count > 0)
+        {
+            <div class="editor-tabs">
+                @foreach (var tab in _openTabs)
+                {
+                    <div class="editor-tab @(tab.Id == _activeTabId ? "editor-tab-active" : "")"
+                         @onclick="() => ActivateTab(tab)">
+                        <span class="editor-tab-icon">@GetFileIcon(tab)</span>
+                        <span class="editor-tab-name">@tab.Nome</span>
+                        <span class="editor-tab-close" @onclick="() => CloseTab(tab)" @onclick:stopPropagation="true">✕</span>
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- EDITOR CONTENT -->
+        <div class="editor-content">
+            @if (_activeTab is not null)
+            {
+                <!-- Breadcrumb -->
+                <div class="breadcrumb">
+                    <span>@GetTrackFromPath(_activeTab.Pasta)</span>
+                    <span class="breadcrumb-sep">/</span>
+                    <span>@_activeTab.Nome</span>
+                    <span class="breadcrumb-sep">/</span>
+                    <span class="breadcrumb-file">README.md</span>
+                </div>
+
+                <!-- Conteúdo do arquivo -->
+                <div class="code-area">
+                    @if (_activeTabContent is not null)
+                    {
+                        <div class="line-numbers">
+                            @for (int i = 1; i <= _lineCount; i++)
+                            {
+                                <span>@i</span>
+                            }
+                        </div>
+                        <pre class="code-text">@_activeTabContent</pre>
+                    }
+                    else
+                    {
+                        <div class="empty-editor">
+                            <p class="empty-hint">// Este tópico ainda não tem documentação</p>
+                            <p class="empty-hint">// Crie um README.md em @_activeTab.Pasta/</p>
+                            <br />
+                            <p class="empty-hint">// Exemplo:</p>
+                            <p class="empty-code">// # @_activeTab.Nome</p>
+                            <p class="empty-code">// Aqui vai a explicação do conceito...</p>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <!-- Welcome screen -->
+                <div class="welcome">
+                    <div class="welcome-title">Roadmap do Boeck</div>
+                    <div class="welcome-sub">Selecione um tópico na sidebar para começar</div>
+                    <div class="welcome-shortcuts">
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">sidebar</span>
+                            <span>Navegar tópicos</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">tabs</span>
+                            <span>Alternar entre arquivos abertos</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">✕</span>
+                            <span>Fechar aba</span>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- STATUS BAR -->
+    <div class="status-bar">
+        <span class="status-item">📂 @(_activeTrackId ?? "—")</span>
+        <span class="status-item">📊 @(_activeTopics?.Count ?? 0) tópicos</span>
+        <span class="status-item">📑 @_openTabs.Count aberto(s)</span>
+        <span class="status-item status-right">Roadmap do Boeck</span>
+    </div>
+</div>
+
+@code {
+    private Dictionary<string, List<Topic>>? _allTracks;
+    private List<TrackInfo>? _tracks;
+    private TrackInfo? _selectedTrack;
+    private string? _activeTrackId;
+    private List<Topic>? _activeTopics;
+
+    // Tabs system
+    private List<Topic> _openTabs = new();
+    private string? _activeTabId;
+    private Topic? _activeTab => _openTabs.FirstOrDefault(t => t.Id == _activeTabId);
+    private string? _activeTabContent;
+    private int _lineCount;
+
+    // Cache de conteúdo
+    private Dictionary<string, string?> _contentCache = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _allTracks = await TopicService.GetAllTracksAsync();
+        _tracks = await TopicService.GetTrackListAsync();
+        if (_tracks.Count > 0)
+        {
+            _selectedTrack = _tracks[0];
+            _activeTrackId = _tracks[0].Id;
+            _activeTopics = await TopicService.GetTopicsByTrackAsync(_activeTrackId);
+        }
+    }
+
+    private async Task SwitchTrack(TrackInfo track)
+    {
+        _selectedTrack = track;
+        _activeTrackId = track.Id;
+        _activeTopics = await TopicService.GetTopicsByTrackAsync(track.Id);
+    }
+
+    private async Task OpenTopic(Topic topic)
+    {
+        // Se não está aberto, adiciona na lista de tabs
+        if (!_openTabs.Any(t => t.Id == topic.Id && t.Pasta == topic.Pasta))
+        {
+            _openTabs.Add(topic);
+        }
+
+        _activeTabId = topic.Id;
+        await LoadContent(topic);
+    }
+
+    private async Task ActivateTab(Topic tab)
+    {
+        _activeTabId = tab.Id;
+        await LoadContent(tab);
+    }
+
+    private void CloseTab(Topic tab)
+    {
+        _openTabs.Remove(tab);
+        _contentCache.Remove(tab.Pasta);
+
+        if (_activeTabId == tab.Id)
+        {
+            _activeTabId = _openTabs.LastOrDefault()?.Id;
+            if (_activeTab is not null && _contentCache.TryGetValue(_activeTab.Pasta, out var cached))
+            {
+                _activeTabContent = cached;
+                _lineCount = cached?.Split('\n').Length ?? 0;
+            }
+            else
+            {
+                _activeTabContent = null;
+                _lineCount = 0;
+            }
+        }
+    }
+
+    private async Task LoadContent(Topic topic)
+    {
+        if (_contentCache.TryGetValue(topic.Pasta, out var cached))
+        {
+            _activeTabContent = cached;
+        }
+        else
+        {
+            _activeTabContent = topic.TemReadme ? await TopicService.GetReadmeAsync(topic.Pasta) : null;
+            _contentCache[topic.Pasta] = _activeTabContent;
+        }
+
+        _lineCount = _activeTabContent?.Split('\n').Length ?? 0;
+    }
+
+    private bool IsTopicOpen(Topic topic) => _openTabs.Any(t => t.Id == topic.Id);
+
+    private string GetFileIcon(Topic topic) => topic.TemReadme ? "📄" : "📝";
+
+    private string GetTrackFromPath(string pasta)
+    {
+        // pasta = "src/csharp/01-Fundamentos" → extrai "csharp"
+        var parts = pasta.Split('/');
+        return parts.Length >= 2 ? parts[1] : _activeTrackId ?? "";
+    }
+}

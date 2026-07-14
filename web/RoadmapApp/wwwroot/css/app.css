@@ -1,0 +1,40 @@
+/* JetBrains Mono - fonte do IntelliJ */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+:root {
+    /* Darcula / IntelliJ Theme */
+    --bg-primary: #1e1e2e;
+    --bg-secondary: #2b2d30;
+    --bg-tertiary: #1e1f22;
+    --bg-editor: #1e1e2e;
+    --border: #393b40;
+    --text-primary: #bcbec4;
+    --text-secondary: #6f737a;
+    --text-muted: #4e5157;
+    --accent: #4a88c7;
+    --accent-hover: #5a9fd4;
+    --tab-active: #1e1e2e;
+    --tab-inactive: #2b2d30;
+    --tab-hover: #353739;
+    --status-bar: #3574f0;
+    --tree-hover: #2e436e;
+    --tree-selected: #214283;
+    --success: #6aab73;
+    --warning: #c77d25;
+    --error: #e55765;
+}
+
+html, body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    overflow: hidden;
+    height: 100%;
+}

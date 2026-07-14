@@ -1,0 +1,24 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.dll
+*.pdb
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Build output
+publish/
+
+# Gerado automaticamente pelo build
+web/RoadmapApp/wwwroot/data/topics.json
