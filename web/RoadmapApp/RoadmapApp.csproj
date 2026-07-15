@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Markdig" Version="0.38.*" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.*" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.*" PrivateAssets="all" />
   </ItemGroup>
@@ -19,8 +20,17 @@
     Escaneia as pastas em ../../src/ e cria o JSON em wwwroot/data/.
   -->
   <Target Name="GenerateTopicsJson" BeforeTargets="Build">
-    <GenerateTopics SourcePath="$(MSBuildProjectDirectory)\..\..\src"
-                    OutputPath="$(MSBuildProjectDirectory)\wwwroot\data\topics.json" />
+    <GenerateTopics SourcePath="$(MSBuildProjectDirectory)\..\..\src" OutputPath="$(MSBuildProjectDirectory)\wwwroot\data\topics.json" />
+  </Target>
+
+  <!-- Copiar arquivos fonte (README.md e .cs) pro wwwroot pra serem servidos -->
+  <Target Name="CopySourceFiles" BeforeTargets="Build">
+    <ItemGroup>
+      <SourceContent Include="$(MSBuildProjectDirectory)\..\..\src\**\README.md" />
+      <SourceContent Include="$(MSBuildProjectDirectory)\..\..\src\**\*.cs" Exclude="$(MSBuildProjectDirectory)\..\..\src\**\bin\**;$(MSBuildProjectDirectory)\..\..\src\**\obj\**" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SourceContent)" DestinationFiles="@(SourceContent->'$(MSBuildProjectDirectory)\wwwroot\src\%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Message Importance="High" Text="[RoadmapApp] Copiados %(SourceContent.Count) arquivos fonte para wwwroot/src/" />
   </Target>
 
   <UsingTask TaskName="GenerateTopics" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
@@ -84,7 +94,22 @@ for (int t = 0; t < trackDirs.Length; t++)
         tracks.AppendLine($"      \"nivel\": \"{nivel}\",");
         tracks.AppendLine($"      \"pasta\": \"src/{trackDir.Name}/{dir.Name}\",");
         tracks.AppendLine($"      \"temReadme\": {(hasReadme ? "true" : "false")},");
-        tracks.AppendLine($"      \"status\": \"{status}\"");
+        tracks.AppendLine($"      \"status\": \"{status}\",");
+
+        // Listar arquivos .cs recursivamente
+        var csFiles = dir.GetFiles("*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.FullName.Contains("bin") && !f.FullName.Contains("obj"))
+            .OrderBy(f => f.Name)
+            .ToArray();
+        tracks.Append("      \"arquivos\": [");
+        for (int f = 0; f < csFiles.Length; f++)
+        {
+            var relativePath = csFiles[f].FullName.Replace(dir.FullName + Path.DirectorySeparatorChar, "").Replace("\\", "/");
+            tracks.Append($"\"{relativePath}\"");
+            if (f < csFiles.Length - 1) tracks.Append(", ");
+        }
+        tracks.AppendLine("]");
+
         tracks.Append("    }");
         if (i < dirs.Length - 1) tracks.Append(",");
         tracks.AppendLine();

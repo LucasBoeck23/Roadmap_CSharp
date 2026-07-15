@@ -43,4 +43,16 @@ public class TopicService
             return null;
         }
     }
+
+    public async Task<string?> GetFileAsync(string pasta, string filePath)
+    {
+        try
+        {
+            return await _http.GetStringAsync($"{pasta}/{filePath}");
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

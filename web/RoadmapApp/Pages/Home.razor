@@ -2,6 +2,8 @@
 @using RoadmapApp.Models
 @using RoadmapApp.Services
 @inject TopicService TopicService
+@inject MarkdownService Markdown
+@inject IJSRuntime JS
 
 <div class="ide-layout">
     <!-- ACTIVITY BAR (ícones laterais tipo VS Code) -->
@@ -62,36 +64,81 @@
         <div class="editor-content">
             @if (_activeTab is not null)
             {
-                <!-- Breadcrumb -->
-                <div class="breadcrumb">
-                    <span>@GetTrackFromPath(_activeTab.Pasta)</span>
-                    <span class="breadcrumb-sep">/</span>
-                    <span>@_activeTab.Nome</span>
-                    <span class="breadcrumb-sep">/</span>
-                    <span class="breadcrumb-file">README.md</span>
-                </div>
-
-                <!-- Conteúdo do arquivo -->
-                <div class="code-area">
-                    @if (_activeTabContent is not null)
-                    {
-                        <div class="line-numbers">
-                            @for (int i = 1; i <= _lineCount; i++)
+                <div class="split-view">
+                    <!-- PAINEL ESQUERDO: README -->
+                    <div class="split-left">
+                        <div class="split-header">
+                            <span>README.md</span>
+                        </div>
+                        <div class="doc-view">
+                            @if (_activeTabContent is not null && _viewingFile is null)
                             {
-                                <span>@i</span>
+                                <div class="doc-readme markdown-body">
+                                    @((MarkupString)Markdown.ToHtml(_readmeCache ?? ""))
+                                </div>
+                            }
+                            else if (_readmeCache is not null)
+                            {
+                                <div class="doc-readme markdown-body">
+                                    @((MarkupString)Markdown.ToHtml(_readmeCache))
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="empty-editor">
+                                    <p class="empty-hint">// Sem README.md</p>
+                                </div>
+                            }
+
+                            @if (_activeTab.Arquivos.Count > 0)
+                            {
+                                <div class="doc-tree">
+                                    <div class="doc-tree-title">Estrutura do Projeto</div>
+                                    <div class="doc-tree-content">
+                                        @foreach (var file in _activeTab.Arquivos)
+                                        {
+                                            var fileName = file.Contains("/") ? file.Split('/').Last() : file;
+                                            <div class="tree-line tree-file-link"
+                                                 @onclick="() => OpenFileInRight(file)">
+                                                @fileName
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
                             }
                         </div>
-                        <pre class="code-text">@_activeTabContent</pre>
-                    }
-                    else
+                    </div>
+
+                    <!-- PAINEL DIREITO: Código -->
+                    @if (_rightTabs.Count > 0)
                     {
-                        <div class="empty-editor">
-                            <p class="empty-hint">// Este tópico ainda não tem documentação</p>
-                            <p class="empty-hint">// Crie um README.md em @_activeTab.Pasta/</p>
-                            <br />
-                            <p class="empty-hint">// Exemplo:</p>
-                            <p class="empty-code">// # @_activeTab.Nome</p>
-                            <p class="empty-code">// Aqui vai a explicação do conceito...</p>
+                        <div class="split-resizer" id="split-resizer"></div>
+                        <div class="split-right">
+                            <div class="right-tabs">
+                                @foreach (var rt in _rightTabs)
+                                {
+                                    var fileName = rt.Contains("/") ? rt.Split('/').Last() : rt;
+                                    <div class="right-tab @(rt == _activeRightTab ? "right-tab-active" : "")"
+                                         @onclick="() => ActivateRightTab(rt)">
+                                        <span>@fileName</span>
+                                        <span class="right-tab-close" @onclick="() => CloseRightTab(rt)" @onclick:stopPropagation="true">✕</span>
+                                    </div>
+                                }
+                            </div>
+                            <div class="right-content">
+                                @if (_rightContent is not null)
+                                {
+                                    <div class="code-with-lines">
+                                        <div class="line-numbers">
+                                            @for (int i = 1; i <= _rightLineCount; i++)
+                                            {
+                                                <span>@i</span>
+                                            }
+                                        </div>
+                                        <pre class="language-csharp code-text"><code class="language-csharp">@_rightContent</code></pre>
+                                    </div>
+                                }
+                            </div>
                         </div>
                     }
                 </div>
@@ -102,20 +149,6 @@
                 <div class="welcome">
                     <div class="welcome-title">Roadmap do Boeck</div>
                     <div class="welcome-sub">Selecione um tópico na sidebar para começar</div>
-                    <div class="welcome-shortcuts">
-                        <div class="shortcut-item">
-                            <span class="shortcut-key">sidebar</span>
-                            <span>Navegar tópicos</span>
-                        </div>
-                        <div class="shortcut-item">
-                            <span class="shortcut-key">tabs</span>
-                            <span>Alternar entre arquivos abertos</span>
-                        </div>
-                        <div class="shortcut-item">
-                            <span class="shortcut-key">✕</span>
-                            <span>Fechar aba</span>
-                        </div>
-                    </div>
                 </div>
             }
         </div>
@@ -143,9 +176,27 @@
     private Topic? _activeTab => _openTabs.FirstOrDefault(t => t.Id == _activeTabId);
     private string? _activeTabContent;
     private int _lineCount;
+    private string? _viewingFile;
+
+    // Right panel (code viewer)
+    private List<string> _rightTabs = new();
+    private string? _activeRightTab;
+    private string? _rightContent;
+    private int _rightLineCount;
+    private string? _readmeCache;
 
     // Cache de conteúdo
     private Dictionary<string, string?> _contentCache = new();
+    private bool _needsHighlight;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_needsHighlight)
+        {
+            _needsHighlight = false;
+            await JS.InvokeVoidAsync("highlightCode");
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -168,19 +219,24 @@
 
     private async Task OpenTopic(Topic topic)
     {
-        // Se não está aberto, adiciona na lista de tabs
         if (!_openTabs.Any(t => t.Id == topic.Id && t.Pasta == topic.Pasta))
         {
             _openTabs.Add(topic);
         }
 
         _activeTabId = topic.Id;
+        _viewingFile = null;
+        _rightTabs.Clear();
+        _activeRightTab = null;
+        _rightContent = null;
         await LoadContent(topic);
+        _readmeCache = _activeTabContent;
     }
 
     private async Task ActivateTab(Topic tab)
     {
         _activeTabId = tab.Id;
+        _viewingFile = null;
         await LoadContent(tab);
     }
 
@@ -226,8 +282,55 @@
 
     private string GetTrackFromPath(string pasta)
     {
-        // pasta = "src/csharp/01-Fundamentos" → extrai "csharp"
         var parts = pasta.Split('/');
         return parts.Length >= 2 ? parts[1] : _activeTrackId ?? "";
+    }
+
+    private async Task ViewFile(string filePath)
+    {
+        await OpenFileInRight(filePath);
+    }
+
+    private async Task ViewReadme()
+    {
+        // Not needed anymore with split view
+    }
+
+    private async Task OpenFileInRight(string filePath)
+    {
+        if (_activeTab is null) return;
+
+        if (!_rightTabs.Contains(filePath))
+        {
+            _rightTabs.Add(filePath);
+        }
+
+        _activeRightTab = filePath;
+        _rightContent = await TopicService.GetFileAsync(_activeTab.Pasta, filePath);
+        _rightLineCount = _rightContent?.Split('\n').Length ?? 0;
+        _needsHighlight = true;
+    }
+
+    private async Task ActivateRightTab(string filePath)
+    {
+        if (_activeTab is null) return;
+        _activeRightTab = filePath;
+        _rightContent = await TopicService.GetFileAsync(_activeTab.Pasta, filePath);
+        _rightLineCount = _rightContent?.Split('\n').Length ?? 0;
+        _needsHighlight = true;
+    }
+
+    private void CloseRightTab(string filePath)
+    {
+        _rightTabs.Remove(filePath);
+        if (_activeRightTab == filePath)
+        {
+            _activeRightTab = _rightTabs.LastOrDefault();
+            if (_activeRightTab is null)
+            {
+                _rightContent = null;
+                _rightLineCount = 0;
+            }
+        }
     }
 }

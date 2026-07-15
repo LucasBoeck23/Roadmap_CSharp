@@ -22,6 +22,9 @@ public class Topic
     [JsonPropertyName("status")]
     public string Status { get; set; } = "nao-iniciado";
 
+    [JsonPropertyName("arquivos")]
+    public List<string> Arquivos { get; set; } = new();
+
     public string NivelLabel => Nivel switch
     {
         "trainee" => "🟢 Trainee",
